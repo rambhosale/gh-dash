@@ -7,9 +7,10 @@ import (
 
 	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dlvhdr/gh-dash/data"
-	"github.com/dlvhdr/gh-dash/ui/markdown"
-	"github.com/dlvhdr/gh-dash/utils"
+
+	"github.com/dlvhdr/gh-dash/v4/data"
+	"github.com/dlvhdr/gh-dash/v4/ui/markdown"
+	"github.com/dlvhdr/gh-dash/v4/utils"
 )
 
 type RenderedActivity struct {
@@ -53,7 +54,7 @@ func (m *Model) renderActivity() string {
 }
 
 func (m Model) renderActivitiesTitle() string {
-	return m.ctx.Styles.Common.MainTextStyle.Copy().
+	return m.ctx.Styles.Common.MainTextStyle.
 		MarginBottom(1).
 		Underline(true).
 		Render(" Comments")
@@ -63,9 +64,9 @@ func renderEmptyState() string {
 	return lipgloss.NewStyle().Italic(true).Render("No comments...")
 }
 
-func (m *Model) renderComment(comment data.Comment, markdownRenderer glamour.TermRenderer) (string, error) {
+func (m *Model) renderComment(comment data.IssueComment, markdownRenderer glamour.TermRenderer) (string, error) {
 	header := lipgloss.JoinHorizontal(lipgloss.Top,
-		m.ctx.Styles.Common.MainTextStyle.Copy().Render(comment.Author.Login),
+		m.ctx.Styles.Common.MainTextStyle.Render(comment.Author.Login),
 		" ",
 		lipgloss.NewStyle().Foreground(m.ctx.Theme.FaintText).Render(utils.TimeElapsed(comment.UpdatedAt)),
 	)

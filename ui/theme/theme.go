@@ -2,8 +2,9 @@ package theme
 
 import (
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/log"
 
-	"github.com/dlvhdr/gh-dash/config"
+	"github.com/dlvhdr/gh-dash/v4/config"
 )
 
 type Theme struct {
@@ -17,6 +18,7 @@ type Theme struct {
 	InvertedText       lipgloss.AdaptiveColor // config.Theme.Colors.Text.Inverted
 	SuccessText        lipgloss.AdaptiveColor // config.Theme.Colors.Text.Success
 	WarningText        lipgloss.AdaptiveColor // config.Theme.Colors.Text.Warning
+	ErrorText          lipgloss.AdaptiveColor // config.Theme.Colors.Text.Error
 }
 
 var DefaultTheme = &Theme{
@@ -29,11 +31,15 @@ var DefaultTheme = &Theme{
 	FaintText:          lipgloss.AdaptiveColor{Light: "007", Dark: "245"},
 	InvertedText:       lipgloss.AdaptiveColor{Light: "015", Dark: "236"},
 	SuccessText:        lipgloss.AdaptiveColor{Light: "002", Dark: "002"},
-	WarningText:        lipgloss.AdaptiveColor{Light: "001", Dark: "001"},
+	WarningText:        lipgloss.AdaptiveColor{Light: "003", Dark: "003"},
+	ErrorText:          lipgloss.AdaptiveColor{Light: "001", Dark: "001"},
 }
 
 func ParseTheme(cfg *config.Config) Theme {
-	_shimHex := func(hex config.HexColor) lipgloss.AdaptiveColor {
+	_shimHex := func(hex config.HexColor, fallback lipgloss.AdaptiveColor) lipgloss.AdaptiveColor {
+		if hex == "" {
+			return fallback
+		}
 		return lipgloss.AdaptiveColor{Light: string(hex), Dark: string(hex)}
 	}
 
@@ -41,24 +47,52 @@ func ParseTheme(cfg *config.Config) Theme {
 		DefaultTheme = &Theme{
 			SelectedBackground: _shimHex(
 				cfg.Theme.Colors.Inline.Background.Selected,
+				DefaultTheme.SelectedBackground,
 			),
 			PrimaryBorder: _shimHex(
 				cfg.Theme.Colors.Inline.Border.Primary,
+				DefaultTheme.PrimaryBorder,
 			),
-			FaintBorder: _shimHex(cfg.Theme.Colors.Inline.Border.Faint),
+			FaintBorder: _shimHex(
+				cfg.Theme.Colors.Inline.Border.Faint,
+				DefaultTheme.FaintBorder,
+			),
 			SecondaryBorder: _shimHex(
 				cfg.Theme.Colors.Inline.Border.Secondary,
+				DefaultTheme.SecondaryBorder,
 			),
-			FaintText:   _shimHex(cfg.Theme.Colors.Inline.Text.Faint),
-			PrimaryText: _shimHex(cfg.Theme.Colors.Inline.Text.Primary),
+			FaintText: _shimHex(
+				cfg.Theme.Colors.Inline.Text.Faint,
+				DefaultTheme.FaintText,
+			),
+			PrimaryText: _shimHex(
+				cfg.Theme.Colors.Inline.Text.Primary,
+				DefaultTheme.PrimaryText,
+			),
 			SecondaryText: _shimHex(
 				cfg.Theme.Colors.Inline.Text.Secondary,
+				DefaultTheme.SecondaryText,
 			),
-			InvertedText: _shimHex(cfg.Theme.Colors.Inline.Text.Inverted),
-			SuccessText:  _shimHex(cfg.Theme.Colors.Inline.Text.Success),
-			WarningText:  _shimHex(cfg.Theme.Colors.Inline.Text.Warning),
+			InvertedText: _shimHex(
+				cfg.Theme.Colors.Inline.Text.Inverted,
+				DefaultTheme.InvertedText,
+			),
+			SuccessText: _shimHex(
+				cfg.Theme.Colors.Inline.Text.Success,
+				DefaultTheme.SuccessText,
+			),
+			WarningText: _shimHex(
+				cfg.Theme.Colors.Inline.Text.Warning,
+				DefaultTheme.WarningText,
+			),
+			ErrorText: _shimHex(
+				cfg.Theme.Colors.Inline.Text.Error,
+				DefaultTheme.ErrorText,
+			),
 		}
 	}
+
+	log.Debug("Parsing theme", "config", cfg.Theme.Colors, "theme", DefaultTheme)
 
 	return *DefaultTheme
 }

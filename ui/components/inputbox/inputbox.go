@@ -8,7 +8,8 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dlvhdr/gh-dash/ui/context"
+
+	"github.com/dlvhdr/gh-dash/v4/ui/context"
 )
 
 type Model struct {
@@ -38,7 +39,7 @@ func NewModel(ctx *context.ProgramContext) Model {
 	ta.FocusedStyle.EndOfBuffer = lipgloss.NewStyle().Foreground(ctx.Theme.FaintText)
 	ta.Focus()
 
-	h := help.NewModel()
+	h := help.New()
 	h.Styles = ctx.Styles.Help.BubbleStyles
 	return Model{
 		ctx:       ctx,

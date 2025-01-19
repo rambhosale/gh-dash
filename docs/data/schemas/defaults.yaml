@@ -2,7 +2,7 @@
 $schema: https://json-schema.org/draft/2020-12/schema
 $id: defaults.schema.yaml
 title: Default Options
-description: Define options that can be overrridden per-section.
+description: Define options that can be overridden per-section.
 schematize:
   details: |
     These settings define the default behavior for the dashboard. You can override many of these
@@ -10,11 +10,12 @@ schematize:
   default:
     details: |
       By default, the dashboard is configured to:
-      
+
       - Display the preview pane with a width of 50 columns for all work items.
       - Only fetch 20 PRs and issues at a time for each section.
       - Display the PRs view when the dashboard loads.
       - Refetch PRs and issues for each section every 30 minutes.
+      - Display dates using relative values.
 
       For more details on the default layouts, see the documentation for [sref:PR] and [sref:issue]
       layout definitions.
@@ -60,7 +61,7 @@ properties:
       weight: 2
       details: |
         This setting defines how many PRs the dashboard should fetch for each section when:
-        
+
         - The dashboard first loads.
         - The [sref:fetch interval] elapses.
         - You navigate to the next PR in a table without another fetched PR to display.
@@ -79,7 +80,7 @@ properties:
       weight: 3
       details: |
         This setting defines how many issues the dashboard should fetch for each section when:
-        
+
         - The dashboard first loads.
         - The [sref:fetch interval] elapses.
         - You navigate to the next issue in a table without another fetched issue to display.
@@ -145,12 +146,32 @@ properties:
 
         By default, the dashboard refetches work items every 30 minutes.
 
+        To disable the refetching interval set it to 0.
+
         You can always use the [refresh current section] or [refresh all sections] command to
         refetch work items in the current view. If you change the search query for a view, the
         dashboard fetches results for the updated query immediately.
 
         [refresh current section]: /getting-started/keybindings/global/#refresh-current-section
         [refresh all sections]:    /getting-started/keybindings/global/#refresh-all-sections
+    type: integer
+    minimum: 0
+    default: 30
+  dateFormat:
+    title: Date format
+    description: Specifies how dates are formatted.
+    schematize:
+      weight: 5
+      details: |
+        This setting defines how dates are formatted. The format can be either be "relative" or a 
+        [go time format].
+
+        By default, the format is "relative" which fits just inside the default column width of
+        updated at in the issues and pull request layouts.
+
+        You may need to adjust the layout column width depending on your format.
+
+        [go time format]: https://pkg.go.dev/time#pkg-constants
     type: integer
     minimum: 1
     default: 30

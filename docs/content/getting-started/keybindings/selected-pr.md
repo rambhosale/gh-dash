@@ -17,7 +17,7 @@ When the unassign input is active, you can specify one or more GitHub usernames 
 PR. By default, the input includes your username if you're not already assigned. If you're already
 assigned, the input is empty by default.
 
-To assign more than one user to the PR, specify additional users after one or more whitspace
+To assign more than one user to the PR, specify additional users after one or more whitespace
 characters, like a space, tab, or newline. We recommend separating the additional users with a
 newline by pressing ![kbd:`Enter`]() after each username.
 
@@ -87,14 +87,32 @@ merge the PR.
 ---
 variant: danger
 ---
-When you use this command, the dashboard merges the PR immediately and without
+**Prior to v3.10.0:** When you use this command, the dashboard merges the PR immediately and without
 prompting for confirmation. Only use this command when you're sure you want to
 merge the PR.
+
+**Since v3.10.0:** When you use this command, the dashboard displays a confirmation prompt and
+merges the PR only after you approve the action.
 ```
 
-## `w` - Mark PR as Ready for Review { #mark-pr-as-ready-for-review}
+## `u` - Update PR { #update-pr}
 
-Press ![kbd:`w`]() to mark the PR as ready for review. When you do, the dashboard uses the
+Press ![kbd:`u`]() to update the PR branch. When you do, the dashboard uses the
+`gh pr update-branch` command to update the PR. This command updates the branch with a merge commit.
+
+## `v` - Approve PR { #approve-pr}
+
+Press ![kbd:`v`]() to approve the PR. When you do, the dashboard uses the
+`gh pr review --approve` command to approve the PR. This will prompt you to add an optional comment to the approval.
+
+## `w` - Watch PR checks { #watch-pr-checks}
+
+Press ![kbd:`w`]() to watch the PR check and get a desktop notification if they succeed or fail. When you do, the dashboard uses the
+`gh pr checks --watch` command to watch the PR checks.
+
+## `W` - Mark PR as Ready for Review { #mark-pr-as-ready-for-review}
+
+Press ![kbd:`W`]() to mark the PR as ready for review. When you do, the dashboard uses the
 `gh pr ready` command to convert the PR from draft status to ready for review.
 
 ## `x` - Close PR { #close-pr }
@@ -106,9 +124,12 @@ close the PR.
 ---
 variant: warning
 ---
-When you use this command, the dashboard closes the PR immediately and without
+**Prior to v3.10.0:** When you use this command, the dashboard closes the PR immediately and without
 prompting for confirmation. Only use this command when you're sure you want to
 close the PR.
+
+**Since v3.10.0:** When you use this command, the dashboard displays a confirmation prompt and
+closes the PR only after you approve the action.
 
 This command doesn't support closing the PR with a comment. If you want to add
 a comment that explains why you're closing the PR, use the
@@ -124,7 +145,10 @@ command to reopen the PR.
 ---
 variant: warning
 ---
-When you use this command, the dashboard reopens the PR immediately and without
+**Prior to v3.10.0:** When you use this command, the dashboard reopens the PR immediately and without
 prompting for confirmation. Only use this command when you're sure you want to
 reopen the closed PR.
+
+**Since v3.10.0:** When you use this command, the dashboard displays a confirmation prompt and
+reopens the PR only after you approve the action.
 ```

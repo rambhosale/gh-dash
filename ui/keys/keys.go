@@ -1,10 +1,13 @@
 package keys
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	log "github.com/charmbracelet/log"
 
-	"github.com/dlvhdr/gh-dash/config"
+	"github.com/dlvhdr/gh-dash/v4/config"
 )
 
 type KeyMap struct {
@@ -21,7 +24,6 @@ type KeyMap struct {
 	PageUp        key.Binding
 	NextSection   key.Binding
 	PrevSection   key.Binding
-	SwitchView    key.Binding
 	Search        key.Binding
 	CopyUrl       key.Binding
 	CopyNumber    key.Binding
@@ -29,7 +31,7 @@ type KeyMap struct {
 	Quit          key.Binding
 }
 
-func GetKeyMap(viewType config.ViewType) help.KeyMap {
+func CreateKeyMapForView(viewType config.ViewType) help.KeyMap {
 	Keys.viewType = viewType
 	return Keys
 }
@@ -42,6 +44,8 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 	var additionalKeys []key.Binding
 	if k.viewType == config.PRsView {
 		additionalKeys = PRFullHelp()
+	} else if k.viewType == config.RepoView {
+		additionalKeys = BranchFullHelp()
 	} else {
 		additionalKeys = IssueFullHelp()
 	}
@@ -71,7 +75,6 @@ func (k KeyMap) AppKeys() []key.Binding {
 	return []key.Binding{
 		k.Refresh,
 		k.RefreshAll,
-		k.SwitchView,
 		k.TogglePreview,
 		k.OpenGithub,
 		k.CopyNumber,
@@ -84,7 +87,7 @@ func (k KeyMap) QuitAndHelpKeys() []key.Binding {
 	return []key.Binding{k.Help, k.Quit}
 }
 
-var Keys = KeyMap{
+var Keys = &KeyMap{
 	Up: key.NewBinding(
 		key.WithKeys("up", "k"),
 		key.WithHelp("↑/k", "move up"),
@@ -133,10 +136,6 @@ var Keys = KeyMap{
 		key.WithKeys("left", "h"),
 		key.WithHelp("󰁍/h", "previous section"),
 	),
-	SwitchView: key.NewBinding(
-		key.WithKeys("s"),
-		key.WithHelp("s", "switch view"),
-	),
 	Search: key.NewBinding(
 		key.WithKeys("/"),
 		key.WithHelp("/", "search"),
@@ -157,4 +156,81 @@ var Keys = KeyMap{
 		key.WithKeys("q", "esc", "ctrl+c"),
 		key.WithHelp("q", "quit"),
 	),
+}
+
+// Rebind will update our saved keybindings from configuration values.
+func Rebind(universal, issueKeys, prKeys, branchKeys []config.Keybinding) error {
+	err := rebindUniversal(universal)
+	if err != nil {
+		return err
+	}
+
+	err = rebindPRKeys(prKeys)
+	if err != nil {
+		return err
+	}
+
+	err = rebindBranchKeys(branchKeys)
+	if err != nil {
+		return err
+	}
+
+	return rebindIssueKeys(issueKeys)
+}
+
+func rebindUniversal(universal []config.Keybinding) error {
+	log.Debug("Rebinding universal keys", "keys", universal)
+	for _, kb := range universal {
+		if kb.Builtin == "" {
+			continue
+		}
+
+		log.Debug("Rebinding universal key", "builtin", kb.Builtin, "key", kb.Key)
+
+		var key *key.Binding
+
+		switch kb.Builtin {
+		case "up":
+			key = &Keys.Up
+		case "down":
+			key = &Keys.Down
+		case "firstLine":
+			key = &Keys.FirstLine
+		case "lastLine":
+			key = &Keys.LastLine
+		case "togglePreview":
+			key = &Keys.TogglePreview
+		case "openGithub":
+			key = &Keys.OpenGithub
+		case "refresh":
+			key = &Keys.Refresh
+		case "refreshAll":
+			key = &Keys.RefreshAll
+		case "pageDown":
+			key = &Keys.PageDown
+		case "pageUp":
+			key = &Keys.PageUp
+		case "nextSection":
+			key = &Keys.NextSection
+		case "prevSection":
+			key = &Keys.PrevSection
+		case "search":
+			key = &Keys.Search
+		case "copyurl":
+			key = &Keys.CopyUrl
+		case "copyNumber":
+			key = &Keys.CopyNumber
+		case "help":
+			key = &Keys.Help
+		case "quit":
+			key = &Keys.Quit
+		default:
+			return fmt.Errorf("unknown built-in universal key: '%s'", kb.Builtin)
+		}
+
+		key.SetKeys(kb.Key)
+		key.SetHelp(kb.Key, key.Help().Desc)
+	}
+
+	return nil
 }

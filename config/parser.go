@@ -8,16 +8,20 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/go-playground/validator/v10"
 	"gopkg.in/yaml.v2"
 
-	"github.com/dlvhdr/gh-dash/utils"
+	"github.com/dlvhdr/gh-dash/v4/utils"
 )
 
 const DashDir = "gh-dash"
+
 const ConfigYmlFileName = "config.yml"
+
 const ConfigYamlFileName = "config.yaml"
+
 const DEFAULT_XDG_CONFIG_DIRNAME = ".config"
 
 var validate *validator.Validate
@@ -27,12 +31,14 @@ type ViewType string
 const (
 	PRsView    ViewType = "prs"
 	IssuesView ViewType = "issues"
+	RepoView   ViewType = "repo"
 )
 
 type SectionConfig struct {
 	Title   string
 	Filters string
 	Limit   *int `yaml:"limit,omitempty"`
+	Type    *ViewType
 }
 
 type PrsSectionConfig struct {
@@ -40,6 +46,7 @@ type PrsSectionConfig struct {
 	Filters string
 	Limit   *int            `yaml:"limit,omitempty"`
 	Layout  PrsLayoutConfig `yaml:"layout,omitempty"`
+	Type    *ViewType
 }
 
 type IssuesSectionConfig struct {
@@ -95,16 +102,37 @@ type Defaults struct {
 	View                   ViewType      `yaml:"view"`
 	Layout                 LayoutConfig  `yaml:"layout,omitempty"`
 	RefetchIntervalMinutes int           `yaml:"refetchIntervalMinutes,omitempty"`
+	DateFormat             string        `yaml:"dateFormat,omitempty"`
+}
+
+type RepoConfig struct {
+	BranchesRefetchIntervalSeconds int `yaml:"branchesRefetchIntervalSeconds,omitempty"`
+	PrsRefetchIntervalSeconds      int `yaml:"prsRefetchIntervalSeconds,omitempty"`
 }
 
 type Keybinding struct {
 	Key     string `yaml:"key"`
 	Command string `yaml:"command"`
+	Builtin string `yaml:"builtin"`
+}
+
+func (kb Keybinding) NewBinding(previous *key.Binding) key.Binding {
+	helpDesc := ""
+	if previous != nil {
+		helpDesc = previous.Help().Desc
+	}
+
+	return key.NewBinding(
+		key.WithKeys(kb.Key),
+		key.WithHelp(kb.Key, helpDesc),
+	)
 }
 
 type Keybindings struct {
-	Issues []Keybinding `yaml:"issues"`
-	Prs    []Keybinding `yaml:"prs"`
+	Universal []Keybinding `yaml:"universal"`
+	Issues    []Keybinding `yaml:"issues"`
+	Prs       []Keybinding `yaml:"prs"`
+	Branches  []Keybinding `yaml:"branches"`
 }
 
 type Pager struct {
@@ -114,55 +142,60 @@ type Pager struct {
 type HexColor string
 
 type ColorThemeText struct {
-	Primary   HexColor `yaml:"primary"   validate:"hexcolor"`
-	Secondary HexColor `yaml:"secondary" validate:"hexcolor"`
-	Inverted  HexColor `yaml:"inverted"  validate:"hexcolor"`
-	Faint     HexColor `yaml:"faint"     validate:"hexcolor"`
-	Warning   HexColor `yaml:"warning"   validate:"hexcolor"`
-	Success   HexColor `yaml:"success"   validate:"hexcolor"`
+	Primary   HexColor `yaml:"primary"   validate:"omitempty,hexcolor"`
+	Secondary HexColor `yaml:"secondary" validate:"omitempty,hexcolor"`
+	Inverted  HexColor `yaml:"inverted"  validate:"omitempty,hexcolor"`
+	Faint     HexColor `yaml:"faint"     validate:"omitempty,hexcolor"`
+	Warning   HexColor `yaml:"warning"   validate:"omitempty,hexcolor"`
+	Success   HexColor `yaml:"success"   validate:"omitempty,hexcolor"`
+	Error     HexColor `yaml:"error"     validate:"omitempty,hexcolor"`
 }
 
 type ColorThemeBorder struct {
-	Primary   HexColor `yaml:"primary"   validate:"hexcolor"`
-	Secondary HexColor `yaml:"secondary" validate:"hexcolor"`
-	Faint     HexColor `yaml:"faint"     validate:"hexcolor"`
+	Primary   HexColor `yaml:"primary"   validate:"omitempty,hexcolor"`
+	Secondary HexColor `yaml:"secondary" validate:"omitempty,hexcolor"`
+	Faint     HexColor `yaml:"faint"     validate:"omitempty,hexcolor"`
 }
 
 type ColorThemeBackground struct {
-	Selected HexColor `yaml:"selected" validate:"hexcolor"`
+	Selected HexColor `yaml:"selected" validate:"omitempty,hexcolor"`
 }
 
 type ColorTheme struct {
-	Text       ColorThemeText       `yaml:"text"       validate:"required,dive"`
-	Background ColorThemeBackground `yaml:"background" validate:"required,dive"`
-	Border     ColorThemeBorder     `yaml:"border"     validate:"required,dive"`
+	Text       ColorThemeText       `yaml:"text"       validate:"required"`
+	Background ColorThemeBackground `yaml:"background" validate:"required"`
+	Border     ColorThemeBorder     `yaml:"border"     validate:"required"`
 }
 
 type ColorThemeConfig struct {
-	Inline ColorTheme `yaml:",inline" validate:"dive"`
+	Inline ColorTheme `yaml:",inline"`
 }
 
 type TableUIThemeConfig struct {
 	ShowSeparator bool `yaml:"showSeparator" default:"true"`
+	Compact       bool `yaml:"compact" default:"false"`
 }
 
 type UIThemeConfig struct {
-	Table TableUIThemeConfig `yaml:"table"`
+	SectionsShowCount bool               `yaml:"sectionsShowCount" default:"true"`
+	Table             TableUIThemeConfig `yaml:"table"`
 }
 
 type ThemeConfig struct {
-	Ui     UIThemeConfig     `yaml:"ui,omitempty"     validate:"dive"`
-	Colors *ColorThemeConfig `yaml:"colors,omitempty" validate:"omitempty,dive"`
+	Ui     UIThemeConfig     `yaml:"ui,omitempty"     validate:"omitempty"`
+	Colors *ColorThemeConfig `yaml:"colors,omitempty" validate:"omitempty"`
 }
 
 type Config struct {
 	PRSections     []PrsSectionConfig    `yaml:"prSections"`
 	IssuesSections []IssuesSectionConfig `yaml:"issuesSections"`
+	Repo           RepoConfig            `yaml:"repo"`
 	Defaults       Defaults              `yaml:"defaults"`
 	Keybindings    Keybindings           `yaml:"keybindings"`
 	RepoPaths      map[string]string     `yaml:"repoPaths"`
-	Theme          *ThemeConfig          `yaml:"theme,omitempty" validate:"omitempty,dive"`
+	Theme          *ThemeConfig          `yaml:"theme,omitempty" validate:"omitempty"`
 	Pager          Pager                 `yaml:"pager"`
+	ConfirmQuit    bool                  `yaml:"confirmQuit"`
 }
 
 type configError struct {
@@ -187,10 +220,10 @@ func (parser ConfigParser) getDefaultConfig() Config {
 			Layout: LayoutConfig{
 				Prs: PrsLayoutConfig{
 					UpdatedAt: ColumnConfig{
-						Width: utils.IntPtr(lipgloss.Width("2mo ago")),
+						Width: utils.IntPtr(lipgloss.Width("2mo  ")),
 					},
 					Repo: ColumnConfig{
-						Width: utils.IntPtr(15),
+						Width: utils.IntPtr(20),
 					},
 					Author: ColumnConfig{
 						Width: utils.IntPtr(15),
@@ -204,12 +237,12 @@ func (parser ConfigParser) getDefaultConfig() Config {
 						Hidden: utils.BoolPtr(true),
 					},
 					Lines: ColumnConfig{
-						Width: utils.IntPtr(lipgloss.Width("123450 / -123450")),
+						Width: utils.IntPtr(lipgloss.Width(" +31.4k -31.6k ")),
 					},
 				},
 				Issues: IssuesLayoutConfig{
 					UpdatedAt: ColumnConfig{
-						Width: utils.IntPtr(lipgloss.Width("2mo ago")),
+						Width: utils.IntPtr(lipgloss.Width("2mo  ")),
 					},
 					Repo: ColumnConfig{
 						Width: utils.IntPtr(15),
@@ -223,6 +256,10 @@ func (parser ConfigParser) getDefaultConfig() Config {
 					},
 				},
 			},
+		},
+		Repo: RepoConfig{
+			BranchesRefetchIntervalSeconds: 30,
+			PrsRefetchIntervalSeconds:      60,
 		},
 		PRSections: []PrsSectionConfig{
 			{
@@ -253,17 +290,21 @@ func (parser ConfigParser) getDefaultConfig() Config {
 			},
 		},
 		Keybindings: Keybindings{
-			Issues: []Keybinding{},
-			Prs:    []Keybinding{},
+			Universal: []Keybinding{},
+			Issues:    []Keybinding{},
+			Prs:       []Keybinding{},
 		},
 		RepoPaths: map[string]string{},
 		Theme: &ThemeConfig{
 			Ui: UIThemeConfig{
+				SectionsShowCount: true,
 				Table: TableUIThemeConfig{
 					ShowSeparator: true,
+					Compact:       false,
 				},
 			},
 		},
+		ConfirmQuit: false,
 	}
 }
 
@@ -324,45 +365,30 @@ func (parser ConfigParser) createConfigFileIfMissing(
 	return nil
 }
 
-func (parser ConfigParser) getExistingConfigFile() (*string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-
-	xdgConfigDir := os.Getenv("XDG_CONFIG_HOME")
-	if xdgConfigDir == "" {
-		xdgConfigDir = filepath.Join(homeDir, DEFAULT_XDG_CONFIG_DIRNAME)
-	}
-
-	configPaths := []string{
-		os.Getenv(
-			"GH_DASH_CONFIG",
-		), // If GH_DASH_CONFIG is empty, the os.Stat call fails
-		filepath.Join(xdgConfigDir, DashDir, ConfigYmlFileName),
-		filepath.Join(xdgConfigDir, DashDir, ConfigYamlFileName),
-	}
-
-	// Check if each config file exists, return the first one that does
-	for _, configPath := range configPaths {
-		if configPath == "" {
-			continue // Skip checking if path is empty
-		}
-		if _, err := os.Stat(configPath); err == nil {
-			return &configPath, nil
-		}
-	}
-
-	return nil, nil
-}
-
-func (parser ConfigParser) getDefaultConfigFileOrCreateIfMissing() (string, error) {
+func (parser ConfigParser) getDefaultConfigFileOrCreateIfMissing(repoPath string) (string, error) {
 	var configFilePath string
-
 	ghDashConfig := os.Getenv("GH_DASH_CONFIG")
+
+	// First try GH_DASH_CONFIG
 	if ghDashConfig != "" {
 		configFilePath = ghDashConfig
-	} else {
+		// Then try to see if we're currently in a git repo
+	} else if repoPath != "" {
+		basename := repoPath + "/." + DashDir
+		repoConfigYml := basename + ".yml"
+		repoConfigYaml := basename + ".yaml"
+		if _, err := os.Stat(repoConfigYml); err == nil {
+			configFilePath = repoConfigYml
+		} else if _, err := os.Stat(repoConfigYaml); err == nil {
+			configFilePath = repoConfigYaml
+		}
+		if configFilePath != "" {
+			return configFilePath, nil
+		}
+	}
+
+	// Then fallback to global config
+	if configFilePath == "" {
 		configDir := os.Getenv("XDG_CONFIG_HOME")
 		if configDir == "" {
 			homeDir, err := os.UserHomeDir()
@@ -414,6 +440,10 @@ func (parser ConfigParser) readConfigFile(path string) (Config, error) {
 	if err != nil {
 		return config, err
 	}
+	repoFF := IsFeatureEnabled(FF_REPO_VIEW)
+	if config.Defaults.View == RepoView && !repoFF {
+		config.Defaults.View = PRsView
+	}
 
 	err = validate.Struct(config)
 	return config, err
@@ -433,7 +463,7 @@ func initParser() ConfigParser {
 	return ConfigParser{}
 }
 
-func ParseConfig(path string) (Config, error) {
+func ParseConfig(path string, repoPath string) (Config, error) {
 	parser := initParser()
 
 	var config Config
@@ -441,7 +471,7 @@ func ParseConfig(path string) (Config, error) {
 	var configFilePath string
 
 	if path == "" {
-		configFilePath, err = parser.getDefaultConfigFileOrCreateIfMissing()
+		configFilePath, err = parser.getDefaultConfigFileOrCreateIfMissing(repoPath)
 		if err != nil {
 			return config, parsingError{err: err}
 		}

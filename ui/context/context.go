@@ -5,8 +5,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dlvhdr/gh-dash/config"
-	"github.com/dlvhdr/gh-dash/ui/theme"
+	"github.com/dlvhdr/gh-dash/v4/config"
+	"github.com/dlvhdr/gh-dash/v4/ui/theme"
+	"github.com/dlvhdr/gh-dash/v4/utils"
 )
 
 type State = int
@@ -28,6 +29,8 @@ type Task struct {
 }
 
 type ProgramContext struct {
+	RepoPath          string
+	RepoUrl           string
 	User              string
 	ScreenHeight      int
 	ScreenWidth       int
@@ -44,11 +47,20 @@ type ProgramContext struct {
 
 func (ctx *ProgramContext) GetViewSectionsConfig() []config.SectionConfig {
 	var configs []config.SectionConfig
-	if ctx.View == config.PRsView {
+	switch ctx.View {
+	case config.RepoView:
+		t := config.RepoView
+		configs = append(configs, config.PrsSectionConfig{
+			Title:   "Local Branches",
+			Filters: "author:@me is:open",
+			Limit:   utils.IntPtr(20),
+			Type:    &t,
+		}.ToSectionConfig())
+	case config.PRsView:
 		for _, cfg := range ctx.Config.PRSections {
 			configs = append(configs, cfg.ToSectionConfig())
 		}
-	} else {
+	case config.IssuesView:
 		for _, cfg := range ctx.Config.IssuesSections {
 			configs = append(configs, cfg.ToSectionConfig())
 		}

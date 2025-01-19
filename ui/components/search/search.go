@@ -6,34 +6,41 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dlvhdr/gh-dash/ui/context"
+
+	"github.com/dlvhdr/gh-dash/v4/ui/context"
 )
 
 type Model struct {
 	ctx          *context.ProgramContext
-	sectionType  string
 	initialValue string
 	textInput    textinput.Model
 }
 
-func NewModel(sectionType string, ctx *context.ProgramContext, initialValue string) Model {
-	prompt := fmt.Sprintf(" is:%s ", sectionType)
+type SearchOptions struct {
+	Prefix       string
+	InitialValue string
+	Placeholder  string
+}
+
+func NewModel(ctx *context.ProgramContext, opts SearchOptions) Model {
+	prompt := fmt.Sprintf(" %s ", opts.Prefix)
 	ti := textinput.New()
-	ti.Placeholder = ""
-	ti.Focus()
-	ti.Width = getInputWidth(ctx, prompt)
-	ti.PromptStyle = ti.PromptStyle.Copy().Foreground(ctx.Theme.SecondaryText)
+	ti.Placeholder = opts.Placeholder
+	ti.PlaceholderStyle = lipgloss.NewStyle().Foreground(ctx.Theme.FaintText)
+	ti.Width = ctx.MainContentWidth - lipgloss.Width(prompt) - 6
+	ti.PromptStyle = ti.PromptStyle.Foreground(ctx.Theme.SecondaryText)
 	ti.Prompt = prompt
-	ti.TextStyle = ti.TextStyle.Copy().Faint(true)
+	ti.TextStyle = ti.TextStyle.Faint(true)
+	ti.Cursor.Style = ti.Cursor.Style.Faint(true)
+	ti.Cursor.TextStyle = ti.Cursor.TextStyle.Faint(true)
 	ti.Blur()
-	ti.SetValue(initialValue)
+	ti.SetValue(opts.InitialValue)
 	ti.CursorStart()
 
 	return Model{
 		ctx:          ctx,
 		textInput:    ti,
-		initialValue: initialValue,
-		sectionType:  sectionType,
+		initialValue: opts.InitialValue,
 	}
 }
 
@@ -48,7 +55,7 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) View(ctx context.ProgramContext) string {
+func (m Model) View(ctx *context.ProgramContext) string {
 	return lipgloss.NewStyle().
 		Width(ctx.MainContentWidth - 4).
 		MaxHeight(3).
@@ -58,13 +65,13 @@ func (m Model) View(ctx context.ProgramContext) string {
 }
 
 func (m *Model) Focus() {
-	m.textInput.TextStyle = m.textInput.TextStyle.Copy().Faint(false)
+	m.textInput.TextStyle = m.textInput.TextStyle.Faint(false)
 	m.textInput.CursorEnd()
 	m.textInput.Focus()
 }
 
 func (m *Model) Blur() {
-	m.textInput.TextStyle = m.textInput.TextStyle.Copy().Faint(true)
+	m.textInput.TextStyle = m.textInput.TextStyle.Faint(true)
 	m.textInput.CursorStart()
 	m.textInput.Blur()
 }
@@ -74,27 +81,17 @@ func (m *Model) SetValue(val string) {
 }
 
 func (m *Model) UpdateProgramContext(ctx *context.ProgramContext) {
-	m.textInput.Width = getInputWidth(ctx, m.textInput.Prompt)
+	m.textInput.Width = m.getInputWidth(ctx)
 	m.textInput.SetValue(m.textInput.Value())
 	m.textInput.Blur()
 }
 
-func getInputWidth(ctx *context.ProgramContext, prompt string) int {
-	return ctx.MainContentWidth - lipgloss.Width(prompt) - 6
-}
-
-type SearchCancelled struct {
-}
-
-func (m Model) cancelSearch() tea.Msg {
-	return SearchCancelled{}
-}
-
-type SearchSubmitted struct {
-}
-
-func (m Model) submitSearch() tea.Msg {
-	return SearchSubmitted{}
+func (m *Model) getInputWidth(ctx *context.ProgramContext) int {
+	textWidth := 0
+	if m.textInput.Value() == "" {
+		textWidth = lipgloss.Width(m.textInput.Placeholder)
+	}
+	return ctx.MainContentWidth - lipgloss.Width(m.textInput.Prompt) - textWidth - 6
 }
 
 func (m Model) Value() string {

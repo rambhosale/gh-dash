@@ -6,9 +6,9 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dlvhdr/gh-dash/ui/constants"
-	"github.com/dlvhdr/gh-dash/ui/context"
-	"github.com/dlvhdr/gh-dash/utils"
+	"github.com/dlvhdr/gh-dash/v4/ui/constants"
+	"github.com/dlvhdr/gh-dash/v4/ui/context"
+	"github.com/dlvhdr/gh-dash/v4/utils"
 )
 
 type Model struct {
@@ -65,6 +65,9 @@ func (m *Model) SyncViewPort(content string) {
 }
 
 func (m *Model) getNumPrsPerPage() int {
+	if m.ListItemHeight == 0 {
+		return 0
+	}
 	return m.viewport.Height / m.ListItemHeight
 }
 

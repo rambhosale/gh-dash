@@ -3,14 +3,14 @@ package common
 import (
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dlvhdr/gh-dash/ui/constants"
-	"github.com/dlvhdr/gh-dash/ui/theme"
+	"github.com/dlvhdr/gh-dash/v4/ui/constants"
+	"github.com/dlvhdr/gh-dash/v4/ui/theme"
 )
 
 var (
 	SearchHeight       = 3
 	FooterHeight       = 1
-	ExpandedHelpHeight = 11
+	ExpandedHelpHeight = 14
 	InputBoxHeight     = 8
 	SingleRuneWidth    = 4
 	MainContentPadding = 1
@@ -40,15 +40,15 @@ func BuildStyles(theme theme.Theme) CommonStyles {
 		Background(theme.SelectedBackground).
 		Height(FooterHeight)
 
-	s.ErrorStyle = s.FooterStyle.Copy().
-		Foreground(theme.WarningText).
+	s.ErrorStyle = s.FooterStyle.
+		Foreground(theme.ErrorText).
 		MaxHeight(FooterHeight)
 
 	s.WaitingGlyph = lipgloss.NewStyle().
 		Foreground(theme.FaintText).
 		Render(constants.WaitingIcon)
 	s.FailureGlyph = lipgloss.NewStyle().
-		Foreground(theme.WarningText).
+		Foreground(theme.ErrorText).
 		Render(constants.FailureIcon)
 	s.SuccessGlyph = lipgloss.NewStyle().
 		Foreground(theme.SuccessText).

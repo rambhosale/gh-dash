@@ -8,12 +8,13 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dlvhdr/gh-dash/data"
-	"github.com/dlvhdr/gh-dash/ui/common"
-	"github.com/dlvhdr/gh-dash/ui/components/inputbox"
-	"github.com/dlvhdr/gh-dash/ui/components/pr"
-	"github.com/dlvhdr/gh-dash/ui/context"
-	"github.com/dlvhdr/gh-dash/ui/markdown"
+
+	"github.com/dlvhdr/gh-dash/v4/data"
+	"github.com/dlvhdr/gh-dash/v4/ui/common"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/inputbox"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/pr"
+	"github.com/dlvhdr/gh-dash/v4/ui/context"
+	"github.com/dlvhdr/gh-dash/v4/ui/markdown"
 )
 
 type Model struct {
@@ -23,20 +24,22 @@ type Model struct {
 	width     int
 
 	isCommenting  bool
+	isApproving   bool
 	isAssigning   bool
 	isUnassigning bool
 
 	inputBox inputbox.Model
 }
 
-func NewModel(ctx context.ProgramContext) Model {
-	inputBox := inputbox.NewModel(&ctx)
+func NewModel(ctx *context.ProgramContext) Model {
+	inputBox := inputbox.NewModel(ctx)
 	inputBox.SetHeight(common.InputBoxHeight)
 
 	return Model{
 		pr: nil,
 
 		isCommenting:  false,
+		isApproving:   false,
 		isAssigning:   false,
 		isUnassigning: false,
 
@@ -67,6 +70,27 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 			case tea.KeyEsc, tea.KeyCtrlC:
 				m.inputBox.Blur()
 				m.isCommenting = false
+				return m, nil
+			}
+
+			m.inputBox, taCmd = m.inputBox.Update(msg)
+			cmds = append(cmds, cmd, taCmd)
+		} else if m.isApproving {
+			switch msg.Type {
+
+			case tea.KeyCtrlD:
+				comment := ""
+				if len(strings.Trim(m.inputBox.Value(), " ")) != 0 {
+					comment = m.inputBox.Value()
+				}
+				cmd = m.approve(comment)
+				m.inputBox.Blur()
+				m.isApproving = false
+				return m, cmd
+
+			case tea.KeyEsc, tea.KeyCtrlC:
+				m.inputBox.Blur()
+				m.isApproving = false
 				return m, nil
 			}
 
@@ -132,13 +156,21 @@ func (m Model) View() string {
 	s.WriteString("\n\n")
 	s.WriteString(m.renderPills())
 	s.WriteString("\n\n")
+
+	labels := m.renderLabels()
+	if labels != "" {
+		s.WriteString(labels)
+		s.WriteString("\n\n")
+	}
+
 	s.WriteString(m.renderDescription())
 	s.WriteString("\n\n")
 	s.WriteString(m.renderChecks())
+
 	s.WriteString("\n\n")
 	s.WriteString(m.renderActivity())
 
-	if m.isCommenting || m.isAssigning || m.isUnassigning {
+	if m.isCommenting || m.isApproving || m.isAssigning || m.isUnassigning {
 		s.WriteString(m.inputBox.View())
 	}
 
@@ -152,7 +184,7 @@ func (m *Model) renderFullNameAndNumber() string {
 }
 
 func (m *Model) renderTitle() string {
-	return m.ctx.Styles.Common.MainTextStyle.Copy().Width(m.getIndentedContentWidth()).
+	return m.ctx.Styles.Common.MainTextStyle.Width(m.getIndentedContentWidth()).
 		Render(m.pr.Data.Title)
 }
 
@@ -185,15 +217,33 @@ func (m *Model) renderStatusPill() string {
 func (m *Model) renderMergeablePill() string {
 	status := m.pr.Data.Mergeable
 	if status == "CONFLICTING" {
-		return m.ctx.Styles.PrSidebar.PillStyle.Copy().
-			Background(m.ctx.Theme.WarningText).
+		return m.ctx.Styles.PrSidebar.PillStyle.
+			Background(m.ctx.Theme.ErrorText).
 			Render("󰅖 Merge Conflicts")
 	} else if status == "MERGEABLE" {
-		return m.ctx.Styles.PrSidebar.PillStyle.Copy().
+		return m.ctx.Styles.PrSidebar.PillStyle.
 			Background(m.ctx.Theme.SuccessText).
-			Render("󰃸 Mergeable")
+			Render("󰃸 No Merge Conflicts")
 	}
 
+	return ""
+}
+
+func (m *Model) renderMergeStateStatusPill() string {
+	status := m.pr.Data.MergeStateStatus
+	if status == "CLEAN" {
+		return m.ctx.Styles.PrSidebar.PillStyle.
+			Background(m.ctx.Theme.SuccessText).
+			Render("󰄬 Branch Up-To-Date")
+	} else if status == "BLOCKED" {
+		return m.ctx.Styles.PrSidebar.PillStyle.
+			Background(m.ctx.Theme.ErrorText).
+			Render("󰅖 Branch Blocked")
+	} else if status == "BEHIND" {
+		return m.ctx.Styles.PrSidebar.PillStyle.
+			Background(m.ctx.Theme.WarningText).
+			Render(" Branch Behind")
+	}
 	return ""
 }
 
@@ -203,18 +253,18 @@ func (m *Model) renderChecksPill() string {
 
 	status := m.pr.GetStatusChecksRollup()
 	if status == "FAILURE" {
-		return s.Copy().
-			Background(t.WarningText).
+		return s.
+			Background(t.ErrorText).
 			Render("󰅖 Checks")
 	} else if status == "PENDING" {
-		return s.Copy().
+		return s.
 			Background(t.FaintText).
 			Foreground(t.PrimaryText).
 			Faint(true).
 			Render(" Checks")
 	}
 
-	return s.Copy().
+	return s.
 		Background(t.SuccessText).
 		Foreground(t.InvertedText).
 		Render("󰄬 Checks")
@@ -224,7 +274,16 @@ func (m *Model) renderPills() string {
 	statusPill := m.renderStatusPill()
 	mergeablePill := m.renderMergeablePill()
 	checksPill := m.renderChecksPill()
-	return lipgloss.JoinHorizontal(lipgloss.Top, statusPill, " ", mergeablePill, " ", checksPill)
+	uptoDatePill := m.renderMergeStateStatusPill()
+	return lipgloss.JoinHorizontal(lipgloss.Top, statusPill, " ", mergeablePill, " ", checksPill, " ", uptoDatePill)
+}
+
+func (m *Model) renderLabels() string {
+	width := m.getIndentedContentWidth()
+	labels := m.pr.Data.Labels.Nodes
+	style := m.ctx.Styles.PrSidebar.PillStyle
+
+	return common.RenderLabels(width, labels, style)
 }
 
 func (m *Model) renderDescription() string {
@@ -257,11 +316,11 @@ func (m *Model) SetSectionId(id int) {
 	m.sectionId = id
 }
 
-func (m *Model) SetRow(data *data.PullRequestData) {
-	if data == nil {
+func (m *Model) SetRow(d *data.PullRequestData) {
+	if d == nil {
 		m.pr = nil
 	} else {
-		m.pr = &pr.PullRequest{Ctx: m.ctx, Data: *data}
+		m.pr = &pr.PullRequest{Ctx: m.ctx, Data: d}
 	}
 }
 
@@ -271,7 +330,7 @@ func (m *Model) SetWidth(width int) {
 }
 
 func (m *Model) IsTextInputBoxFocused() bool {
-	return m.isCommenting || m.isAssigning || m.isUnassigning
+	return m.isCommenting || m.isAssigning || m.isApproving || m.isUnassigning
 }
 
 func (m *Model) GetIsCommenting() bool {
@@ -291,13 +350,31 @@ func (m *Model) SetIsCommenting(isCommenting bool) tea.Cmd {
 	m.inputBox.SetPrompt("Leave a comment...")
 
 	if isCommenting {
-		return tea.Sequentially(textarea.Blink, m.inputBox.Focus())
+		return tea.Sequence(textarea.Blink, m.inputBox.Focus())
 	}
 	return nil
 }
 
 func (m *Model) getIndentedContentWidth() int {
 	return m.width - 4
+}
+
+func (m *Model) GetIsApproving() bool {
+	return m.isApproving
+}
+
+func (m *Model) SetIsApproving(isApproving bool) tea.Cmd {
+	if !m.isApproving && isApproving {
+		m.inputBox.Reset()
+	}
+	m.isApproving = isApproving
+	m.inputBox.SetPrompt("Approve with comment...")
+	m.inputBox.SetValue("LGTM")
+
+	if isApproving {
+		return tea.Sequence(textarea.Blink, m.inputBox.Focus())
+	}
+	return nil
 }
 
 func (m *Model) GetIsAssigning() bool {
@@ -315,7 +392,7 @@ func (m *Model) SetIsAssigning(isAssigning bool) tea.Cmd {
 	}
 
 	if isAssigning {
-		return tea.Sequentially(textarea.Blink, m.inputBox.Focus())
+		return tea.Sequence(textarea.Blink, m.inputBox.Focus())
 	}
 	return nil
 }
@@ -342,7 +419,7 @@ func (m *Model) SetIsUnassigning(isUnassigning bool) tea.Cmd {
 	m.inputBox.SetValue(strings.Join(m.prAssignees(), "\n"))
 
 	if isUnassigning {
-		return tea.Sequentially(textarea.Blink, m.inputBox.Focus())
+		return tea.Sequence(textarea.Blink, m.inputBox.Focus())
 	}
 	return nil
 }

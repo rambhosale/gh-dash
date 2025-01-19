@@ -17,7 +17,7 @@ When the unassign input is active, you can specify one or more GitHub usernames 
 issue. By default, the input includes your username if you're not already assigned. If you're
 already assigned, the input is empty by default.
 
-To assign more than one user to the issue, specify additional users after one or more whitspace
+To assign more than one user to the issue, specify additional users after one or more whitespace
 characters, like a space, tab, or newline. We recommend separating the additional users with a
 newline by pressing ![kbd:`Enter`]() after each username.
 
@@ -57,9 +57,12 @@ to close the issue.
 ---
 variant: warning
 ---
-When you use this command, the dashboard closes the issue immediately and
+**Prior to v3.10.0:** When you use this command, the dashboard closes the issue immediately and
 without prompting for confirmation. Only use this command when you're sure you
 want to close the issue.
+
+**Since v3.10.0:** When you use this command, the dashboard displays a confirmation prompt and
+closes the issue only after you approve the action.
 
 This command doesn't support closing the issue with a comment. If you want to
 add a comment that explains why you're closing the issue, use the
@@ -75,7 +78,10 @@ command to reopen the issue.
 ---
 variant: warning
 ---
-When you use this command, the dashboard reopens the issue immediately and
+**Prior to v3.10.0:** When you use this command, the dashboard reopens the issue immediately and
 without prompting for confirmation. Only use this command when you're sure you
 want to reopen the closed issue.
+
+**Since v3.10.0:** When you use this command, the dashboard displays a confirmation prompt and
+reopens the issue only after you approve the action.
 ```

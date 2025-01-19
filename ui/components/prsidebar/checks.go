@@ -4,11 +4,11 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dlvhdr/gh-dash/data"
+	"github.com/dlvhdr/gh-dash/v4/data"
 )
 
 func (sidebar *Model) renderChecks() string {
-	title := sidebar.ctx.Styles.Common.MainTextStyle.Copy().MarginBottom(1).Underline(true).Render(" Checks")
+	title := sidebar.ctx.Styles.Common.MainTextStyle.MarginBottom(1).Underline(true).Render(" Checks")
 
 	commits := sidebar.pr.Data.Commits.Nodes
 	if len(commits) == 0 {

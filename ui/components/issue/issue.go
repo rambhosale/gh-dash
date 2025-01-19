@@ -5,11 +5,12 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dlvhdr/gh-dash/data"
-	"github.com/dlvhdr/gh-dash/ui/components"
-	"github.com/dlvhdr/gh-dash/ui/components/table"
-	"github.com/dlvhdr/gh-dash/ui/context"
-	"github.com/dlvhdr/gh-dash/utils"
+
+	"github.com/dlvhdr/gh-dash/v4/data"
+	"github.com/dlvhdr/gh-dash/v4/ui/components"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/table"
+	"github.com/dlvhdr/gh-dash/v4/ui/context"
+	"github.com/dlvhdr/gh-dash/v4/utils"
 )
 
 type Issue struct {
@@ -19,7 +20,6 @@ type Issue struct {
 
 func (issue *Issue) ToTableRow() table.Row {
 	return table.Row{
-		issue.renderUpdateAt(),
 		issue.renderStatus(),
 		issue.renderRepoName(),
 		issue.renderTitle(),
@@ -27,15 +27,25 @@ func (issue *Issue) ToTableRow() table.Row {
 		issue.renderAssignees(),
 		issue.renderNumComments(),
 		issue.renderNumReactions(),
+		issue.renderUpdateAt(),
 	}
 }
 
 func (issue *Issue) getTextStyle() lipgloss.Style {
-	return components.GetIssueTextStyle(issue.Ctx, issue.Data.State)
+	return components.GetIssueTextStyle(issue.Ctx)
 }
 
 func (issue *Issue) renderUpdateAt() string {
-	return issue.getTextStyle().Render(utils.TimeElapsed(issue.Data.UpdatedAt))
+	timeFormat := issue.Ctx.Config.Defaults.DateFormat
+
+	updatedAtOutput := ""
+	if timeFormat == "" || timeFormat == "relative" {
+		updatedAtOutput = utils.TimeElapsed(issue.Data.UpdatedAt)
+	} else {
+		updatedAtOutput = issue.Data.UpdatedAt.Format(timeFormat)
+	}
+
+	return issue.getTextStyle().Render(updatedAtOutput)
 }
 
 func (issue *Issue) renderRepoName() string {

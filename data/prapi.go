@@ -1,12 +1,18 @@
 package data
 
 import (
+	"crypto/tls"
 	"fmt"
+	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/charmbracelet/log"
 	gh "github.com/cli/go-gh/v2/pkg/api"
 	graphql "github.com/cli/shurcooL-graphql"
+	"github.com/shurcooL/githubv4"
+
+	"github.com/dlvhdr/gh-dash/v4/config"
 )
 
 type PullRequestData struct {
@@ -31,12 +37,15 @@ type PullRequestData struct {
 	HeadRef struct {
 		Name string
 	}
-	Repository    Repository
-	Assignees     Assignees `graphql:"assignees(first: 3)"`
-	Comments      Comments  `graphql:"comments(last: 5, orderBy: { field: UPDATED_AT, direction: DESC })"`
-	LatestReviews Reviews   `graphql:"latestReviews(last: 3)"`
-	IsDraft       bool
-	Commits       Commits `graphql:"commits(last: 1)"`
+	Repository       Repository
+	Assignees        Assignees     `graphql:"assignees(first: 3)"`
+	Comments         Comments      `graphql:"comments(last: 5, orderBy: { field: UPDATED_AT, direction: DESC })"`
+	LatestReviews    Reviews       `graphql:"latestReviews(last: 3)"`
+	ReviewThreads    ReviewThreads `graphql:"reviewThreads(last: 20)"`
+	IsDraft          bool
+	Commits          Commits          `graphql:"commits(last: 1)"`
+	Labels           PRLabels         `graphql:"labels(first: 3)"`
+	MergeStateStatus MergeStateStatus `graphql:"mergeStateStatus"`
 }
 
 type CheckRun struct {
@@ -94,6 +103,21 @@ type Comment struct {
 	UpdatedAt time.Time
 }
 
+type ReviewComment struct {
+	Author struct {
+		Login string
+	}
+	Body      string
+	UpdatedAt time.Time
+	StartLine int
+	Line      int
+}
+
+type ReviewComments struct {
+	Nodes      []ReviewComment
+	TotalCount int
+}
+
 type Comments struct {
 	Nodes      []Comment
 	TotalCount int
@@ -112,10 +136,37 @@ type Reviews struct {
 	Nodes []Review
 }
 
+type ReviewThreads struct {
+	Nodes []struct {
+		Id           string
+		IsOutdated   bool
+		OriginalLine int
+		StartLine    int
+		Line         int
+		Path         string
+		Comments     ReviewComments `graphql:"comments(first: 10)"`
+	}
+}
+
+type PRLabel struct {
+	Color string
+	Name  string
+}
+
+type PRLabels struct {
+	Nodes []Label
+}
+
+type MergeStateStatus string
+
 type PageInfo struct {
 	HasNextPage bool
 	StartCursor string
 	EndCursor   string
+}
+
+func (data PullRequestData) GetTitle() string {
+	return data.Title
 }
 
 func (data PullRequestData) GetRepoNameWithOwner() string {
@@ -144,9 +195,19 @@ type PullRequestsResponse struct {
 	PageInfo   PageInfo
 }
 
+var client *gh.GraphQLClient
+
 func FetchPullRequests(query string, limit int, pageInfo *PageInfo) (PullRequestsResponse, error) {
 	var err error
-	client, err := gh.DefaultGraphQLClient()
+	if client == nil {
+		if config.IsFeatureEnabled(config.FF_MOCK_DATA) {
+			log.Debug("using mock data", "server", "https://localhost:3000")
+			http.DefaultTransport.(*http.Transport).TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+			client, err = gh.NewGraphQLClient(gh.ClientOptions{Host: "localhost:3000", AuthToken: "fake-token"})
+		} else {
+			client, err = gh.DefaultGraphQLClient()
+		}
+	}
 
 	if err != nil {
 		return PullRequestsResponse{}, err
@@ -175,7 +236,7 @@ func FetchPullRequests(query string, limit int, pageInfo *PageInfo) (PullRequest
 	if err != nil {
 		return PullRequestsResponse{}, err
 	}
-	log.Debug("Successfully fetched PRs", "query", query, "count", queryResult.Search.IssueCount)
+	log.Debug("Successfully fetched PRs", "count", queryResult.Search.IssueCount)
 
 	prs := make([]PullRequestData, 0, len(queryResult.Search.Nodes))
 	for _, node := range queryResult.Search.Nodes {
@@ -190,4 +251,34 @@ func FetchPullRequests(query string, limit int, pageInfo *PageInfo) (PullRequest
 		TotalCount: queryResult.Search.IssueCount,
 		PageInfo:   queryResult.Search.PageInfo,
 	}, nil
+}
+
+func FetchPullRequest(prUrl string) (PullRequestData, error) {
+	var err error
+	client, err := gh.DefaultGraphQLClient()
+
+	if err != nil {
+		return PullRequestData{}, err
+	}
+
+	var queryResult struct {
+		Resource struct {
+			PullRequest PullRequestData `graphql:"... on PullRequest"`
+		} `graphql:"resource(url: $url)"`
+	}
+	parsedUrl, err := url.Parse(prUrl)
+	if err != nil {
+		return PullRequestData{}, err
+	}
+	variables := map[string]interface{}{
+		"url": githubv4.URI{URL: parsedUrl},
+	}
+	log.Debug("Fetching PR", "url", prUrl)
+	err = client.Query("FetchPullRequest", &queryResult, variables)
+	if err != nil {
+		return PullRequestData{}, err
+	}
+	log.Debug("Successfully fetched PR", "url", prUrl)
+
+	return queryResult.Resource.PullRequest, nil
 }

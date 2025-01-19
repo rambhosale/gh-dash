@@ -8,18 +8,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dlvhdr/gh-dash/config"
-	"github.com/dlvhdr/gh-dash/data"
-	"github.com/dlvhdr/gh-dash/ui/common"
-	"github.com/dlvhdr/gh-dash/ui/components/prompt"
-	"github.com/dlvhdr/gh-dash/ui/components/search"
-	"github.com/dlvhdr/gh-dash/ui/components/table"
-	"github.com/dlvhdr/gh-dash/ui/constants"
-	"github.com/dlvhdr/gh-dash/ui/context"
-	"github.com/dlvhdr/gh-dash/utils"
+	"github.com/dlvhdr/gh-dash/v4/config"
+	"github.com/dlvhdr/gh-dash/v4/data"
+	"github.com/dlvhdr/gh-dash/v4/ui/common"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/prompt"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/search"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/table"
+	"github.com/dlvhdr/gh-dash/v4/ui/constants"
+	"github.com/dlvhdr/gh-dash/v4/ui/context"
+	"github.com/dlvhdr/gh-dash/v4/utils"
 )
 
-type Model struct {
+type BaseModel struct {
 	Id                        int
 	Config                    config.SectionConfig
 	Ctx                       *context.ProgramContext
@@ -37,28 +37,38 @@ type Model struct {
 	PromptConfirmationBox     prompt.Model
 	IsPromptConfirmationShown bool
 	PromptConfirmationAction  string
+	LastFetchTaskId           string
+	IsSearchSupported         bool
+}
+
+type NewSectionOptions struct {
+	Id          int
+	Config      config.SectionConfig
+	Type        string
+	Columns     []table.Column
+	Singular    string
+	Plural      string
+	LastUpdated time.Time
 }
 
 func NewModel(
-	id int,
 	ctx *context.ProgramContext,
-	cfg config.SectionConfig,
-	sType string,
-	columns []table.Column,
-	singular, plural string,
-	lastUpdated time.Time,
-) Model {
-	m := Model{
-		Id:                    id,
-		Type:                  sType,
-		Config:                cfg,
-		Ctx:                   ctx,
-		Spinner:               spinner.Model{Spinner: spinner.Dot},
-		Columns:               columns,
-		SingularForm:          singular,
-		PluralForm:            plural,
-		SearchBar:             search.NewModel(sType, ctx, cfg.Filters),
-		SearchValue:           cfg.Filters,
+	options NewSectionOptions,
+) BaseModel {
+	m := BaseModel{
+		Ctx:          ctx,
+		Id:           options.Id,
+		Type:         options.Type,
+		Config:       options.Config,
+		Spinner:      spinner.Model{Spinner: spinner.Dot},
+		Columns:      options.Columns,
+		SingularForm: options.Singular,
+		PluralForm:   options.Plural,
+		SearchBar: search.NewModel(ctx, search.SearchOptions{
+			Prefix:       fmt.Sprintf("is:%s", options.Type),
+			InitialValue: options.Config.Filters,
+		}),
+		SearchValue:           options.Config.Filters,
 		IsSearching:           false,
 		TotalCount:            0,
 		PageInfo:              nil,
@@ -67,7 +77,7 @@ func NewModel(
 	m.Table = table.NewModel(
 		*ctx,
 		m.GetDimensions(),
-		lastUpdated,
+		options.LastUpdated,
 		m.Columns,
 		nil,
 		m.SingularForm,
@@ -77,6 +87,8 @@ func NewModel(
 				m.PluralForm,
 			),
 		)),
+		"Loading...",
+		false,
 	)
 	return m
 }
@@ -89,11 +101,10 @@ type Section interface {
 	PromptConfirmation
 	UpdateProgramContext(ctx *context.ProgramContext)
 	MakeSectionCmd(cmd tea.Cmd) tea.Cmd
-	LastUpdated() time.Time
-	UpdateLastUpdated(time.Time)
 	GetPagerContent() string
 	GetItemSingularForm() string
 	GetItemPluralForm() string
+	GetTotalCount() *int
 }
 
 type Identifier interface {
@@ -117,6 +128,8 @@ type Table interface {
 	FetchNextPageSectionRows() []tea.Cmd
 	BuildRows() []table.Row
 	ResetRows()
+	IsLoading() bool
+	SetIsLoading(val bool)
 }
 
 type Search interface {
@@ -135,25 +148,14 @@ type PromptConfirmation interface {
 	GetPromptConfirmation() string
 }
 
-func (m *Model) CreateNextTickCmd(nextTickCmd tea.Cmd) tea.Cmd {
-	if m == nil || nextTickCmd == nil {
-		return nil
-	}
-	return m.MakeSectionCmd(func() tea.Msg {
-		return SectionTickMsg{
-			InternalTickMsg: nextTickCmd(),
-		}
-	})
-}
-
-func (m *Model) GetDimensions() constants.Dimensions {
+func (m *BaseModel) GetDimensions() constants.Dimensions {
 	return constants.Dimensions{
 		Width:  m.Ctx.MainContentWidth - m.Ctx.Styles.Section.ContainerStyle.GetHorizontalPadding(),
 		Height: m.Ctx.MainContentHeight - common.SearchHeight,
 	}
 }
 
-func (m *Model) UpdateProgramContext(ctx *context.ProgramContext) {
+func (m *BaseModel) UpdateProgramContext(ctx *context.ProgramContext) {
 	oldDimensions := m.GetDimensions()
 	m.Ctx = ctx
 	newDimensions := m.GetDimensions()
@@ -180,43 +182,39 @@ func (msg SectionRowsFetchedMsg) GetSectionId() int {
 	return msg.SectionId
 }
 
-type SectionTickMsg struct {
-	InternalTickMsg tea.Msg
-}
-
-func (m *Model) GetId() int {
+func (m *BaseModel) GetId() int {
 	return m.Id
 }
 
-func (m *Model) GetType() string {
+func (m *BaseModel) GetType() string {
 	return m.Type
 }
 
-func (m *Model) CurrRow() int {
+func (m *BaseModel) CurrRow() int {
 	return m.Table.GetCurrItem()
 }
 
-func (m *Model) NextRow() int {
+func (m *BaseModel) NextRow() int {
 	return m.Table.NextItem()
 }
 
-func (m *Model) PrevRow() int {
+func (m *BaseModel) PrevRow() int {
 	return m.Table.PrevItem()
 }
 
-func (m *Model) FirstItem() int {
+func (m *BaseModel) FirstItem() int {
 	return m.Table.FirstItem()
 }
 
-func (m *Model) LastItem() int {
+func (m *BaseModel) LastItem() int {
 	return m.Table.LastItem()
 }
 
-func (m *Model) IsSearchFocused() bool {
+func (m *BaseModel) IsSearchFocused() bool {
 	return m.IsSearching
 }
 
-func (m *Model) SetIsSearching(val bool) tea.Cmd {
+func (m *BaseModel) SetIsSearching(val bool) tea.Cmd {
 	m.IsSearching = val
 	if val {
 		m.SearchBar.Focus()
@@ -227,19 +225,19 @@ func (m *Model) SetIsSearching(val bool) tea.Cmd {
 	}
 }
 
-func (m *Model) ResetFilters() {
+func (m *BaseModel) ResetFilters() {
 	m.SearchBar.SetValue(m.Config.Filters)
 }
 
-func (m *Model) ResetPageInfo() {
+func (m *BaseModel) ResetPageInfo() {
 	m.PageInfo = nil
 }
 
-func (m *Model) IsPromptConfirmationFocused() bool {
+func (m *BaseModel) IsPromptConfirmationFocused() bool {
 	return m.IsPromptConfirmationShown
 }
 
-func (m *Model) SetIsPromptConfirmationShown(val bool) tea.Cmd {
+func (m *BaseModel) SetIsPromptConfirmationShown(val bool) tea.Cmd {
 	m.IsPromptConfirmationShown = val
 	if val {
 		m.PromptConfirmationBox.Focus()
@@ -250,11 +248,11 @@ func (m *Model) SetIsPromptConfirmationShown(val bool) tea.Cmd {
 	return nil
 }
 
-func (m *Model) SetPromptConfirmationAction(action string) {
+func (m *BaseModel) SetPromptConfirmationAction(action string) {
 	m.PromptConfirmationAction = action
 }
 
-func (m *Model) GetPromptConfirmationAction() string {
+func (m *BaseModel) GetPromptConfirmationAction() string {
 	return m.PromptConfirmationAction
 }
 
@@ -264,7 +262,7 @@ type SectionMsg struct {
 	InternalMsg tea.Msg
 }
 
-func (m *Model) MakeSectionCmd(cmd tea.Cmd) tea.Cmd {
+func (m *BaseModel) MakeSectionCmd(cmd tea.Cmd) tea.Cmd {
 	if cmd == nil {
 		return nil
 	}
@@ -279,11 +277,11 @@ func (m *Model) MakeSectionCmd(cmd tea.Cmd) tea.Cmd {
 	}
 }
 
-func (m *Model) GetFilters() string {
+func (m *BaseModel) GetFilters() string {
 	return m.SearchBar.Value()
 }
 
-func (m *Model) GetMainContent() string {
+func (m *BaseModel) GetMainContent() string {
 	if m.Table.Rows == nil {
 		d := m.GetDimensions()
 		return lipgloss.Place(
@@ -304,11 +302,9 @@ func (m *Model) GetMainContent() string {
 	}
 }
 
-func (m *Model) View() string {
-	var search string
-	search = m.SearchBar.View(*m.Ctx)
-
-	return m.Ctx.Styles.Section.ContainerStyle.Copy().Render(
+func (m *BaseModel) View() string {
+	search := m.SearchBar.View(m.Ctx)
+	return m.Ctx.Styles.Section.ContainerStyle.Render(
 		lipgloss.JoinVertical(
 			lipgloss.Left,
 			search,
@@ -317,35 +313,25 @@ func (m *Model) View() string {
 	)
 }
 
-func (m *Model) LastUpdated() time.Time {
+func (m *BaseModel) ResetRows() {
+	m.Table.Rows = nil
+	m.ResetPageInfo()
+	m.Table.ResetCurrItem()
+}
+
+func (m *BaseModel) LastUpdated() time.Time {
 	return m.Table.LastUpdated()
 }
 
-func (m *Model) UpdateLastUpdated(t time.Time) {
-	m.Table.UpdateLastUpdated(t)
-}
-
-func (m *Model) UpdateTotalItemsCount(count int) {
+func (m *BaseModel) UpdateTotalItemsCount(count int) {
 	m.Table.UpdateTotalItemsCount(count)
 }
 
-func (m *Model) GetPagerContent() string {
-	pagerContent := ""
-	if m.TotalCount > 0 {
-		pagerContent = fmt.Sprintf(
-			"%v %v • %v %v/%v • Fetched %v",
-			constants.WaitingIcon,
-			m.LastUpdated().Format("01/02 15:04:05"),
-			m.SingularForm,
-			m.Table.GetCurrItem()+1,
-			m.TotalCount,
-			len(m.Table.Rows),
-		)
-	}
-	pager := m.Ctx.Styles.ListViewPort.PagerStyle.Copy().Render(pagerContent)
-	return pager
+func (m *BaseModel) IsLoading() bool {
+	return m.Table.IsLoading()
 }
-func (m *Model) GetPromptConfirmation() string {
+
+func (m *BaseModel) GetPromptConfirmation() string {
 	if m.IsPromptConfirmationShown {
 		var prompt string
 		switch {
@@ -361,16 +347,25 @@ func (m *Model) GetPromptConfirmation() string {
 		case m.PromptConfirmationAction == "merge" && m.Ctx.View == config.PRsView:
 			prompt = "Are you sure you want to merge this PR? (Y/n) "
 
+		case m.PromptConfirmationAction == "update" && m.Ctx.View == config.PRsView:
+			prompt = "Are you sure you want to update this PR? (Y/n) "
+
 		case m.PromptConfirmationAction == "close" && m.Ctx.View == config.IssuesView:
 			prompt = "Are you sure you want to close this issue? (Y/n) "
 
 		case m.PromptConfirmationAction == "reopen" && m.Ctx.View == config.IssuesView:
 			prompt = "Are you sure you want to reopen this issue? (Y/n) "
+		case m.PromptConfirmationAction == "delete" && m.Ctx.View == config.RepoView:
+			prompt = "Are you sure you want to delete this branch? (Y/n) "
+		case m.PromptConfirmationAction == "new" && m.Ctx.View == config.RepoView:
+			prompt = "Enter branch name: "
+		case m.PromptConfirmationAction == "create_pr" && m.Ctx.View == config.RepoView:
+			prompt = "Enter PR title: "
 		}
 
 		m.PromptConfirmationBox.SetPrompt(prompt)
 
-		return m.Ctx.Styles.ListViewPort.PagerStyle.Copy().Render(m.PromptConfirmationBox.View())
+		return m.Ctx.Styles.ListViewPort.PagerStyle.Render(m.PromptConfirmationBox.View())
 	}
 
 	return ""

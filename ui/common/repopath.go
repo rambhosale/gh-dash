@@ -42,11 +42,14 @@ func GetRepoLocalPath(repoName string, cfgPaths map[string]string) (string, bool
 	// match config:repoPath values of {owner}/* as map key
 	wildcardPath, wildcardFound := cfgPaths[fmt.Sprintf("%s/*", owner)]
 
-	if !wildcardFound {
-		return "", false
+	if wildcardFound {
+		// adjust wildcard match to wildcard path - ~/somepath/* to ~/somepath/{repo}
+		return fmt.Sprintf("%s/%s", strings.TrimSuffix(wildcardPath, "/*"), repo), true
 	}
 
-	// adjust wildcard match to wildcard path - ~/somepath/* to ~/somepath/{repo}
-	return fmt.Sprintf("%s/%s", strings.TrimSuffix(wildcardPath, "/*"), repo), true
+	if template, ok := cfgPaths[":owner/:repo"]; ok {
+		return strings.ReplaceAll(strings.ReplaceAll(template, ":owner", owner), ":repo", repo), true
+	}
 
+	return "", false
 }

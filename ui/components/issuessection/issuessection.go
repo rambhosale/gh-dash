@@ -6,20 +6,20 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dlvhdr/gh-dash/config"
-	"github.com/dlvhdr/gh-dash/data"
-	"github.com/dlvhdr/gh-dash/ui/components/issue"
-	"github.com/dlvhdr/gh-dash/ui/components/section"
-	"github.com/dlvhdr/gh-dash/ui/components/table"
-	"github.com/dlvhdr/gh-dash/ui/constants"
-	"github.com/dlvhdr/gh-dash/ui/context"
-	"github.com/dlvhdr/gh-dash/utils"
+	"github.com/dlvhdr/gh-dash/v4/config"
+	"github.com/dlvhdr/gh-dash/v4/data"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/issue"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/section"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/table"
+	"github.com/dlvhdr/gh-dash/v4/ui/constants"
+	"github.com/dlvhdr/gh-dash/v4/ui/context"
+	"github.com/dlvhdr/gh-dash/v4/utils"
 )
 
 const SectionType = "issue"
 
 type Model struct {
-	section.Model
+	section.BaseModel
 	Issues []data.IssueData
 }
 
@@ -30,15 +30,17 @@ func NewModel(
 	lastUpdated time.Time,
 ) Model {
 	m := Model{}
-	m.Model = section.NewModel(
-		id,
+	m.BaseModel = section.NewModel(
 		ctx,
-		cfg.ToSectionConfig(),
-		SectionType,
-		GetSectionColumns(cfg, ctx),
-		m.GetItemSingularForm(),
-		m.GetItemPluralForm(),
-		lastUpdated,
+		section.NewSectionOptions{
+			Id:          id,
+			Config:      cfg.ToSectionConfig(),
+			Type:        SectionType,
+			Columns:     GetSectionColumns(cfg, ctx),
+			Singular:    m.GetItemSingularForm(),
+			Plural:      m.GetItemPluralForm(),
+			LastUpdated: lastUpdated,
+		},
 	)
 	m.Issues = []data.IssueData{}
 
@@ -119,22 +121,26 @@ func (m Model) Update(msg tea.Msg) (section.Section, tea.Cmd) {
 					currIssue.Assignees.Nodes = removeAssignees(currIssue.Assignees.Nodes, msg.RemovedAssignees.Nodes)
 				}
 				m.Issues[i] = currIssue
+				m.Table.SetIsLoading(false)
 				m.Table.SetRows(m.BuildRows())
 				break
 			}
 		}
 
 	case SectionIssuesFetchedMsg:
-		if m.PageInfo != nil {
-			m.Issues = append(m.Issues, msg.Issues...)
-		} else {
-			m.Issues = msg.Issues
+		if m.LastFetchTaskId == msg.TaskId {
+			if m.PageInfo != nil {
+				m.Issues = append(m.Issues, msg.Issues...)
+			} else {
+				m.Issues = msg.Issues
+			}
+			m.TotalCount = msg.TotalCount
+			m.Table.SetIsLoading(false)
+			m.PageInfo = &msg.PageInfo
+			m.Table.SetRows(m.BuildRows())
+			m.UpdateLastUpdated(time.Now())
+			m.UpdateTotalItemsCount(m.TotalCount)
 		}
-		m.TotalCount = msg.TotalCount
-		m.PageInfo = &msg.PageInfo
-		m.Table.SetRows(m.BuildRows())
-		m.UpdateLastUpdated(time.Now())
-		m.UpdateTotalItemsCount(m.TotalCount)
 	}
 
 	search, searchCmd := m.SearchBar.Update(msg)
@@ -142,7 +148,11 @@ func (m Model) Update(msg tea.Msg) (section.Section, tea.Cmd) {
 
 	prompt, promptCmd := m.PromptConfirmationBox.Update(msg)
 	m.PromptConfirmationBox = prompt
-	return &m, tea.Batch(cmd, searchCmd, promptCmd)
+
+	table, tableCmd := m.Table.Update(msg)
+	m.Table = table
+
+	return &m, tea.Batch(cmd, searchCmd, promptCmd, tableCmd)
 }
 
 func GetSectionColumns(
@@ -174,11 +184,6 @@ func GetSectionColumns(
 	)
 
 	return []table.Column{
-		{
-			Title:  "",
-			Width:  updatedAtLayout.Width,
-			Hidden: updatedAtLayout.Hidden,
-		},
 		{
 			Title:  "",
 			Width:  stateLayout.Width,
@@ -214,10 +219,15 @@ func GetSectionColumns(
 			Width:  &issueNumCommentsCellWidth,
 			Hidden: reactionsLayout.Hidden,
 		},
+		{
+			Title:  "",
+			Width:  updatedAtLayout.Width,
+			Hidden: updatedAtLayout.Hidden,
+		},
 	}
 }
 
-func (m *Model) BuildRows() []table.Row {
+func (m Model) BuildRows() []table.Row {
 	var rows []table.Row
 	for _, currIssue := range m.Issues {
 		issueModel := issue.Issue{Ctx: m.Ctx, Data: currIssue}
@@ -259,6 +269,7 @@ func (m *Model) FetchNextPageSectionRows() []tea.Cmd {
 		startCursor = m.PageInfo.StartCursor
 	}
 	taskId := fmt.Sprintf("fetching_issues_%d_%s", m.Id, startCursor)
+	m.LastFetchTaskId = taskId
 	task := context.Task{
 		Id:        taskId,
 		StartText: fmt.Sprintf(`Fetching issues for "%s"`, m.Config.Title),
@@ -295,9 +306,9 @@ func (m *Model) FetchNextPageSectionRows() []tea.Cmd {
 				Issues:     res.Issues,
 				TotalCount: res.TotalCount,
 				PageInfo:   res.PageInfo,
+				TaskId:     taskId,
 			},
 		}
-
 	}
 	cmds = append(cmds, fetchCmd)
 
@@ -310,13 +321,11 @@ func (m *Model) UpdateLastUpdated(t time.Time) {
 
 func (m *Model) ResetRows() {
 	m.Issues = nil
-	m.Table.Rows = nil
-	m.ResetPageInfo()
-	m.Table.ResetCurrItem()
+	m.BaseModel.ResetRows()
 }
 
 func FetchAllSections(
-	ctx context.ProgramContext,
+	ctx *context.ProgramContext,
 ) (sections []section.Section, fetchAllCmd tea.Cmd) {
 	sectionConfigs := ctx.Config.IssuesSections
 	fetchIssuesCmds := make([]tea.Cmd, 0, len(sectionConfigs))
@@ -324,7 +333,7 @@ func FetchAllSections(
 	for i, sectionConfig := range sectionConfigs {
 		sectionModel := NewModel(
 			i+1,
-			&ctx,
+			ctx,
 			sectionConfig,
 			time.Now(),
 		) // 0 is the search section
@@ -340,11 +349,12 @@ type SectionIssuesFetchedMsg struct {
 	Issues     []data.IssueData
 	TotalCount int
 	PageInfo   data.PageInfo
+	TaskId     string
 }
 
 type UpdateIssueMsg struct {
 	IssueNumber      int
-	NewComment       *data.Comment
+	NewComment       *data.IssueComment
 	IsClosed         *bool
 	AddedAssignees   *data.Assignees
 	RemovedAssignees *data.Assignees
@@ -389,4 +399,37 @@ func (m Model) GetItemSingularForm() string {
 
 func (m Model) GetItemPluralForm() string {
 	return "Issues"
+}
+
+func (m Model) GetTotalCount() *int {
+	if m.IsLoading() {
+		return nil
+	}
+	c := m.TotalCount
+	return &c
+}
+
+func (m Model) IsLoading() bool {
+	return m.Table.IsLoading()
+}
+
+func (m *Model) SetIsLoading(val bool) {
+	m.Table.SetIsLoading(val)
+}
+
+func (m Model) GetPagerContent() string {
+	pagerContent := ""
+	if m.TotalCount > 0 {
+		pagerContent = fmt.Sprintf(
+			"%v %v • %v %v/%v • Fetched %v",
+			constants.WaitingIcon,
+			m.LastUpdated().Format("01/02 15:04:05"),
+			m.SingularForm,
+			m.Table.GetCurrItem()+1,
+			m.TotalCount,
+			len(m.Table.Rows),
+		)
+	}
+	pager := m.Ctx.Styles.ListViewPort.PagerStyle.Render(pagerContent)
+	return pager
 }

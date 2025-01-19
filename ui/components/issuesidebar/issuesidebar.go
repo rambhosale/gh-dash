@@ -8,12 +8,13 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dlvhdr/gh-dash/data"
-	"github.com/dlvhdr/gh-dash/ui/common"
-	"github.com/dlvhdr/gh-dash/ui/components/inputbox"
-	"github.com/dlvhdr/gh-dash/ui/components/issue"
-	"github.com/dlvhdr/gh-dash/ui/context"
-	"github.com/dlvhdr/gh-dash/ui/markdown"
+
+	"github.com/dlvhdr/gh-dash/v4/data"
+	"github.com/dlvhdr/gh-dash/v4/ui/common"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/inputbox"
+	"github.com/dlvhdr/gh-dash/v4/ui/components/issue"
+	"github.com/dlvhdr/gh-dash/v4/ui/context"
+	"github.com/dlvhdr/gh-dash/v4/ui/markdown"
 )
 
 type Model struct {
@@ -29,8 +30,8 @@ type Model struct {
 	inputBox inputbox.Model
 }
 
-func NewModel(ctx context.ProgramContext) Model {
-	inputBox := inputbox.NewModel(&ctx)
+func NewModel(ctx *context.ProgramContext) Model {
+	inputBox := inputbox.NewModel(ctx)
 	inputBox.SetHeight(common.InputBoxHeight)
 
 	return Model{
@@ -155,7 +156,7 @@ func (m *Model) renderFullNameAndNumber() string {
 }
 
 func (m *Model) renderTitle() string {
-	return m.ctx.Styles.Common.MainTextStyle.Copy().Width(m.getIndentedContentWidth()).
+	return m.ctx.Styles.Common.MainTextStyle.Width(m.getIndentedContentWidth()).
 		Render(m.issue.Data.Title)
 }
 
@@ -171,7 +172,7 @@ func (m *Model) renderStatusPill() string {
 		content = " Closed"
 	}
 
-	return m.ctx.Styles.PrSidebar.PillStyle.Copy().
+	return m.ctx.Styles.PrSidebar.PillStyle.
 		Background(lipgloss.Color(bgColor)).
 		Render(content)
 }
@@ -203,18 +204,11 @@ func (m *Model) renderBody() string {
 }
 
 func (m *Model) renderLabels() string {
-	labels := make([]string, 0, len(m.issue.Data.Labels.Nodes))
-	for _, label := range m.issue.Data.Labels.Nodes {
-		labels = append(
-			labels,
-			m.ctx.Styles.PrSidebar.PillStyle.Copy().
-				Background(lipgloss.Color("#"+label.Color)).
-				Render(label.Name),
-		)
-		labels = append(labels, " ")
-	}
+	width := m.getIndentedContentWidth()
+	labels := m.issue.Data.Labels.Nodes
+	style := m.ctx.Styles.PrSidebar.PillStyle
 
-	return lipgloss.JoinHorizontal(lipgloss.Top, labels...)
+	return common.RenderLabels(width, labels, style)
 }
 
 func (m *Model) getIndentedContentWidth() int {
@@ -254,7 +248,7 @@ func (m *Model) SetIsCommenting(isCommenting bool) tea.Cmd {
 	m.inputBox.SetPrompt("Leave a comment...")
 
 	if isCommenting {
-		return tea.Sequentially(textarea.Blink, m.inputBox.Focus())
+		return tea.Sequence(textarea.Blink, m.inputBox.Focus())
 	}
 	return nil
 }
@@ -274,7 +268,7 @@ func (m *Model) SetIsAssigning(isAssigning bool) tea.Cmd {
 	}
 
 	if isAssigning {
-		return tea.Sequentially(textarea.Blink, m.inputBox.Focus())
+		return tea.Sequence(textarea.Blink, m.inputBox.Focus())
 	}
 	return nil
 }
@@ -301,7 +295,7 @@ func (m *Model) SetIsUnassigning(isUnassigning bool) tea.Cmd {
 	m.inputBox.SetValue(strings.Join(m.issueAssignees(), "\n"))
 
 	if isUnassigning {
-		return tea.Sequentially(textarea.Blink, m.inputBox.Focus())
+		return tea.Sequence(textarea.Blink, m.inputBox.Focus())
 	}
 	return nil
 }
